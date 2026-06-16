@@ -3,9 +3,11 @@ Milvus + SiliconFlow 嵌入示例
 使用硅基流动的 Qwen/Qwen3-VL-Embedding-0.6B 模型进行嵌入和检索
 """
 from pymilvus import MilvusClient
+from typing import Union
 import requests
 from dotenv import load_dotenv
 import os
+
 # ==================== 配置 ====================
 # 硅基流动 API Key (从 https://siliconflow.cn 获取)
 # 可以设置环境变量 SILICONFLOW_API_KEY （强烈推荐）或直接在这里填入
@@ -14,13 +16,15 @@ API_KEY = os.getenv("SILICONFLOW_API_KEY", "sk-lhgpxnfqqjaafeinovhtrqhwauubdrgot
 # 硅基流动 API 地址
 API_URL = "https://api.siliconflow.cn/v1/embeddings"
 # 嵌入模型，对应 curl 中的 model
-EMBEDDING_MODEL = "Qwen/Qwen3-VL-Embedding-0.6B"
+EMBEDDING_MODEL = "Qwen/Qwen3-VL-Embedding-8B"
 # Milvus 连接地址
 MILVUS_URI = "http://localhost:19530"
 # Collection 名称
 COLLECTION_NAME = "rag_docs_bge_m3"
-# Qwen3-VL-Embedding-0.6B 向量维度
-EMBEDDING_DIM = 1024
+# Qwen3-VL-Embedding-8B 向量维度
+EMBEDDING_DIM = 4096
+
+
 # ==================== 嵌入函数 ====================
 def get_embedding(text: str, model: str = EMBEDDING_MODEL) -> list[float]:
     """
@@ -68,6 +72,152 @@ def get_embeddings(texts: list[str], model: str = EMBEDDING_MODEL) -> list[list[
     # 按输入顺序返回嵌入向量
     embeddings = [item["embedding"] for item in sorted(result["data"], key=lambda x: x["index"])]
     return embeddings
+
+
+# ==================== CRUD 工具函数 ====================
+# Collection 操作
+def create_collection(client: MilvusClient, collection_name: str, dimension: int, metric_type: str = "IP", **kwargs):
+    """
+    创建集合
+    """
+    client.create_collection(
+        collection_name=collection_name,
+        dimension=dimension,
+        metric_type=metric_type,
+        **kwargs
+    )
+
+
+def create_collection_if_not_exists(client: MilvusClient, collection_name: str, dimension: int, metric_type: str = "IP", **kwargs):
+    """
+    创建集合（如果不存在）
+    """
+    if not client.has_collection(collection_name):
+        client.create_collection(
+            collection_name=collection_name,
+            dimension=dimension,
+            metric_type=metric_type,
+            **kwargs
+        )
+        print(f"Collection '{collection_name}' 创建成功")
+    else:
+        print(f"Collection '{collection_name}' 已存在")
+
+
+def get_collection_info(client: MilvusClient, collection_name: str):
+    """获取集合信息"""
+    return client.describe_collection(collection_name=collection_name)
+
+
+def show_collections(client: MilvusClient):
+    """查看所有集合"""
+    return client.list_collections()
+
+
+def drop_collection(client: MilvusClient, collection_name: str):
+    """删除集合"""
+    if client.has_collection(collection_name):
+        client.drop_collection(collection_name=collection_name)
+        print(f"Collection '{collection_name}' 已删除")
+
+
+def load_collection(client: MilvusClient, collection_name: str):
+    """加载集合到内存"""
+    client.load_collection(collection_name=collection_name)
+
+
+# 数据操作
+def insert(client: MilvusClient, collection_name: str, data: list):
+    """插入数据"""
+    result = client.insert(collection_name=collection_name, data=data)
+    return result.get("ids", [])
+
+
+def search(client: MilvusClient, collection_name: str, data: list, limit: int = 10, output_fields: list = None, search_params: dict = None):
+    """向量搜索"""
+    if search_params is None:
+        search_params = {"params": {}}
+    if output_fields is None:
+        output_fields = ["*"]
+    return client.search(
+        collection_name=collection_name,
+        data=data,
+        limit=limit,
+        output_fields=output_fields,
+        search_params=search_params,
+    )
+
+
+def query(client: MilvusClient, collection_name: str, filter: str = None, output_fields: list = None, limit: int = 100):
+    """条件查询"""
+    if output_fields is None:
+        output_fields = ["*"]
+    return client.query(
+        collection_name=collection_name,
+        filter=filter,
+        output_fields=output_fields,
+        limit=limit,
+    )
+
+
+def get(client: MilvusClient, collection_name: str, ids: Union[int, str, list], output_fields: list = None):
+    """根据 ID 获取数据"""
+    if not isinstance(ids, list):
+        ids = [ids]
+    if output_fields is None:
+        output_fields = ["*"]
+    return client.get(collection_name=collection_name, ids=ids, output_fields=output_fields)
+
+
+def delete(client: MilvusClient, collection_name: str, ids: Union[int, str, list] = None, filter: str = None):
+    """删除数据"""
+    if ids is not None:
+        if not isinstance(ids, list):
+            ids = [ids]
+        return client.delete(collection_name=collection_name, ids=ids)
+    elif filter is not None:
+        return client.delete(collection_name=collection_name, filter=filter)
+    else:
+        raise ValueError("必须提供 ids 或 filter 参数")
+
+
+# 索引操作
+def list_indexes(client: MilvusClient, collection_name: str):
+    """查看集合的所有索引"""
+    return client.list_indexes(collection_name=collection_name)
+
+
+# 便捷别名函数
+def insert_data(client: MilvusClient, collection_name: str, data: list):
+    """插入数据的别名"""
+    return insert(client, collection_name, data)
+
+
+def search_data(client: MilvusClient, collection_name: str, data: list, limit: int = 10, output_fields: list = None, search_params: dict = None):
+    """搜索数据的别名"""
+    return search(client, collection_name, data, limit, output_fields, search_params)
+
+
+def query_data(client: MilvusClient, collection_name: str, filter: str = None, output_fields: list = None, limit: int = 100):
+    """查询数据的别名"""
+    return query(client, collection_name, filter, output_fields, limit)
+
+
+def delete_data_by_ids(client: MilvusClient, collection_name: str, ids: Union[int, str, list]):
+    """根据 ID 删除数据的别名"""
+    return delete(client, collection_name, ids=ids)
+
+
+def delete_data_by_filter(client: MilvusClient, collection_name: str, filter: str):
+    """根据条件删除数据的别名"""
+    return delete(client, collection_name, filter=filter)
+
+
+def get_data_by_ids(client: MilvusClient, collection_name: str, ids: Union[int, str, list], output_fields: list = None):
+    """根据 ID 获取数据的别名"""
+    return get(client, collection_name, ids, output_fields)
+
+
 # ==================== 主程序 ====================
 def main():
     print("=" * 50)
@@ -157,6 +307,8 @@ def main():
     print("\n" + "=" * 50)
     print("示例完成!")
     print("=" * 50)
+
+
 if __name__ == "__main__":
     # 检查 API Key
     if API_KEY == "your-api-key-here":

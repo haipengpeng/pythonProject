@@ -1,13 +1,17 @@
 """
 Milvus 元数据过滤示例
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from pymilvus import MilvusClient
 # 跟上个示例一样的代码 已经单独分装成一个utils
-from milvus_utils import get_embedding, get_embeddings, API_KEY
+from milvus.milvus_utils import get_embedding, get_embeddings, API_KEY
 # 配置
 MILVUS_URI = "http://localhost:19530"
 COLLECTION_NAME = "rag_docs_filter"
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 4096
 def main():
     # 1. 连接 Milvus
     milvus_client = MilvusClient(
